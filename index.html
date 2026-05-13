@@ -19,7 +19,6 @@
 <body class="p-4">
     <div id="app" class="max-w-md mx-auto bg-white shadow-2xl rounded-[2.5rem] overflow-hidden border border-gray-100">
         
-        <!-- Header: แสดงเลขรอบและสถานะ -->
         <div class="bg-gradient-to-br from-blue-900 to-blue-600 p-8 text-white text-center relative">
             <h1 class="text-2xl font-black italic tracking-widest uppercase">INVESTOR</h1>
             <p class="text-[10px] font-bold tracking-[0.3em] opacity-70">MANAGEMENT SYSTEM</p>
@@ -31,14 +30,17 @@
                     ● {{ settings.status === 'Open' ? 'ระบบเปิด' : 'ระบบปิด' }}
                 </span>
             </div>
+            <!-- ✅ FIX 1: Countdown แสดงว่าจะ refresh อีกกี่วินาที -->
+            <p class="text-[9px] opacity-40 mt-2 font-mono">อัปเดตอัตโนมัติใน {{ countdown }}s</p>
         </div>
 
         <div class="p-6">
-            <!-- 1. หน้า Login: ดึงเงินต้นรายคนจากคอลัมน์ B -->
+            <!-- หน้า Login -->
             <div v-if="!isLoggedIn" class="space-y-6 py-4">
                 <div class="text-center">
                     <p class="text-gray-400 text-[10px] font-bold uppercase tracking-widest mb-2">Investor Authentication</p>
                     <input v-model="playerId" type="text" placeholder="ระบุ ID เช่น 001" 
+                           @keyup.enter="login"
                            class="w-full border-2 border-gray-100 rounded-2xl p-5 text-center text-3xl font-bold focus:border-blue-500 focus:ring-4 focus:ring-blue-500/5 outline-none transition-all shadow-sm">
                 </div>
                 <button @click="login" :disabled="isLoading"
@@ -47,9 +49,8 @@
                 </button>
             </div>
 
-            <!-- 2. หน้าหลักสำหรับส่งข้อมูล -->
+            <!-- หน้าหลัก -->
             <div v-else class="space-y-5">
-                <!-- Dashboard เงินทุน -->
                 <div class="bg-slate-900 text-white p-6 rounded-[2rem] shadow-2xl border-b-[6px] border-blue-500 relative overflow-hidden">
                     <div class="absolute -top-2 -right-2 p-4 opacity-5 text-5xl italic font-black uppercase">{{ playerId }}</div>
                     <div class="relative z-10">
@@ -77,7 +78,6 @@
                         </div>
                     </div>
 
-                    <!-- ส่วนเสริม: ประกันและเลขนำโชค -->
                     <div class="bg-blue-50 p-5 rounded-[1.5rem] space-y-4 border border-blue-100 shadow-inner">
                         <div class="flex items-center justify-between">
                             <div class="flex flex-col">
@@ -96,7 +96,6 @@
                         </div>
                     </div>
 
-                    <!-- ปุ่มส่งแผนการลงทุน -->
                     <button @click="submit" :disabled="isSubmitting || remainingBudget < 0" 
                             class="w-full py-5 rounded-2xl font-black text-lg text-white shadow-2xl transition-all active:scale-[0.97]"
                             :class="remainingBudget < 0 ? 'bg-red-300 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700 shadow-green-100'">
@@ -108,9 +107,9 @@
                 <div v-else class="text-center py-12 bg-gray-50 rounded-[2.5rem] border-4 border-dotted border-gray-200">
                     <div class="text-6xl mb-4 animate-pulse">🔒</div>
                     <p class="font-black text-gray-500 text-lg uppercase tracking-widest">System Locked</p>
-                    <p class="text-[10px] text-gray-400 px-10 mt-2">GM กำลังสรุปผลลัพธ์รอบปัจจุบัน<br>กรุณารอสแกนใหม่อีกครั้งเพื่อเริ่มรอบถัดไป</p>
-                    <button @click="location.reload()" class="mt-6 text-blue-600 text-[10px] font-black uppercase tracking-[0.2em] border-b-2 border-blue-600 pb-1">
-                        Tap to Refresh
+                    <p class="text-[10px] text-gray-400 px-10 mt-2">GM กำลังสรุปผลลัพธ์รอบปัจจุบัน<br>ระบบจะอัปเดตอัตโนมัติทุก 10 วินาที</p>
+                    <button @click="loadSettings" class="mt-6 text-blue-600 text-[10px] font-black uppercase tracking-[0.2em] border-b-2 border-blue-600 pb-1">
+                        Tap to Refresh Now
                     </button>
                 </div>
             </div>
@@ -118,7 +117,7 @@
     </div>
 
     <script>
-        const { createApp, ref, computed, onMounted } = Vue;
+        const { createApp, ref, computed, onMounted, onUnmounted } = Vue;
         createApp({
             setup() {
                 const scriptURL = 'https://script.google.com/macros/s/AKfycbxrUUOD38JFAo7GwVaB9-5H8XMSvdHSLdk-EwdIeNpCBkw0WJh7frZeHPdUioZht4DUow/exec';
@@ -129,9 +128,10 @@
                 const isLoading = ref(false);
                 const initialBudget = ref(0);
                 const settings = ref({ status: 'Locked', round: '-', assets: [] });
-                const investments = ref(new Array(15).fill(0));
+                const investments = ref([]); // ✅ FIX 2: เริ่มเป็น array ว่าง ปรับขนาดตาม assets จริง
                 const insurance = ref(false);
                 const luckyNumber = ref(1);
+                const countdown = ref(10); // ✅ FIX 1: countdown state
 
                 const totalInvested = computed(() => {
                     let total = investments.value.reduce((sum, val) => sum + (Number(val) || 0), 0);
@@ -146,6 +146,8 @@
                         const res = await fetch(scriptURL);
                         const data = await res.json();
                         settings.value = data;
+                        // ✅ FIX 2: ปรับขนาด investments ให้ตรงกับจำนวน assets จริงจาก Sheet
+                        investments.value = new Array(data.assets.length).fill(0);
                     } catch (e) { console.error("Setting Failed"); }
                 };
 
@@ -155,7 +157,6 @@
                     try {
                         const res = await fetch(`${scriptURL}?action=getBudget&id=${playerId.value}`);
                         const data = await res.json();
-                        // บัคยอดเงินรอบเก่าแก้ตรงนี้: ดึงค่าล่าสุดจากคอลัมน์ B ทุกครั้งที่ Login
                         initialBudget.value = Number(data.budget) || 0;
                         isLoggedIn.value = true;
                     } catch (e) { alert("ไม่สามารถดึงข้อมูลได้ โปรดตรวจสอบ ID"); }
@@ -167,8 +168,10 @@
                     if (!confirm("คุณต้องการยืนยันแผนการลงทุนนี้ใช่หรือไม่?")) return;
                     isSubmitting.value = true;
                     try {
+                        // ✅ FIX 3: เพิ่ม mode: 'no-cors' ป้องกัน POST fail เงียบ
                         await fetch(scriptURL, {
                             method: 'POST',
+                            mode: 'no-cors',
                             body: JSON.stringify({
                                 playerId: playerId.value,
                                 round: settings.value.round,
@@ -183,8 +186,36 @@
                     isSubmitting.value = false;
                 };
 
-                onMounted(loadSettings);
-                return { playerId, isLoggedIn, isSubmitting, isLoading, settings, investments, insurance, luckyNumber, initialBudget, remainingBudget, formatMoney, login, submit };
+                let pollingInterval = null;
+                let countdownInterval = null;
+
+                onMounted(() => {
+                    loadSettings();
+
+                    // ✅ FIX 1: Auto-polling ดึงสถานะจาก Sheet ทุก 10 วินาทีอัตโนมัติ
+                    pollingInterval = setInterval(() => {
+                        loadSettings();
+                        countdown.value = 10;
+                    }, 10000);
+
+                    // Countdown UI ถอยหลังทุก 1 วินาที
+                    countdownInterval = setInterval(() => {
+                        if (countdown.value > 0) countdown.value--;
+                    }, 1000);
+                });
+
+                // ✅ Cleanup เมื่อปิดหน้า
+                onUnmounted(() => {
+                    clearInterval(pollingInterval);
+                    clearInterval(countdownInterval);
+                });
+
+                return { 
+                    playerId, isLoggedIn, isSubmitting, isLoading, 
+                    settings, investments, insurance, luckyNumber, 
+                    initialBudget, remainingBudget, formatMoney, countdown,
+                    login, submit, loadSettings
+                };
             }
         }).mount('#app');
     </script>
