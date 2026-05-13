@@ -23,7 +23,7 @@
         </div>
 
         <div class="p-6">
-            <!-- หน้า Login (กรอก ID เพื่อดึงยอดเงิน) -->
+            <!-- หน้า Login (ดึงยอดเงินต้นจาก Sheet) -->
             <div v-if="!isLoggedIn" class="space-y-4">
                 <div class="text-center py-4">
                     <p class="text-gray-600 font-bold uppercase tracking-widest">Login ID</p>
@@ -36,7 +36,7 @@
                 </button>
             </div>
 
-            <!-- หน้าฟอร์มลงทุน (ดึงเงินต้นมาจาก Sheet อัตโนมัติ) -->
+            <!-- หน้าฟอร์มลงทุน -->
             <div v-else class="space-y-4">
                 <div class="bg-slate-800 text-white p-5 rounded-2xl shadow-inner mb-6">
                     <div class="flex justify-between items-center border-b border-slate-700 pb-2 mb-2">
@@ -55,6 +55,7 @@
                     </div>
                 </div>
 
+                <!-- รายการสินทรัพย์ -->
                 <div v-if="settings.status === 'Open'" class="space-y-3">
                     <div v-for="(asset, i) in settings.assets" :key="i" class="flex items-center gap-3 bg-gray-50 p-2 rounded-lg border border-gray-100">
                         <span class="text-xs font-bold text-gray-500 w-24 truncate">{{ asset }}</span>
@@ -92,7 +93,8 @@
         const { createApp, ref, computed, onMounted } = Vue;
         createApp({
             setup() {
-                const scriptURL = 'https://script.google.com/macros/s/AKfycbxgyyuT1kSl-TCn0jwR2dTvLhjim5mPOycHrPsbYtVeGGFXzf98IWPLMTSwQaxsZ9f6OQ/exec';
+                // อัปเดต URL ใหม่ของคุณที่นี่แล้ว
+                const scriptURL = 'https://script.google.com/macros/s/AKfycbyMlyJwTW6elqPzaaBaxlqmhJVtkcgL-kK4fg5NjxgTJ7Sv6e3GTlUK0Qx1-LeNXdjtPg/exec';
                 
                 const playerId = ref('');
                 const isLoggedIn = ref(false);
@@ -110,7 +112,8 @@
                     return total;
                 });
 
-                const remainingBudget = computed(() => initialBudget.value - totalInvested.value);
+                // ใช้ Math.floor เพื่อป้องกันเศษเงิน 1-2 บาท
+                const remainingBudget = computed(() => Math.floor(initialBudget.value - totalInvested.value));
                 const formatMoney = (v) => new Intl.NumberFormat('th-TH').format(v);
 
                 const loadSettings = async () => {
@@ -124,19 +127,19 @@
                     if (!playerId.value) return alert("กรุณาระบุ ID");
                     isLoading.value = true;
                     try {
-                        // ดึงยอดเงินต้นจาก Sheet (คอลัมน์ B) ตาม ID ที่กรอก
+                        // ดึงยอดเงินจากคอลัมน์ B ใน Sheet โดยตรง
                         const res = await fetch(`${scriptURL}?action=getBudget&id=${playerId.value}`);
                         const data = await res.json();
                         initialBudget.value = data.budget;
                         isLoggedIn.value = true;
                     } catch (e) {
-                        alert("ไม่สามารถดึงข้อมูล ID นี้ได้ กรุณาลองใหม่อีกครั้ง");
+                        alert("ไม่สามารถดึงข้อมูล ID นี้ได้ กรุณาตรวจสอบ ID อีกครั้ง");
                     }
                     isLoading.value = false;
                 };
 
                 const submit = async () => {
-                    if (remainingBudget.value < 0) return alert("เงินทุนของคุณไม่พอสำหรับการลงทุนนี้");
+                    if (remainingBudget.value < 0) return alert("เงินทุนของคุณไม่พอ");
                     isSubmitting.value = true;
                     try {
                         const res = await fetch(scriptURL, {
