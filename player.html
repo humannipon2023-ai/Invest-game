@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Investor Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Kanit', sans-serif; background-color: #f0f2f5; }
+        input[type=number]::-webkit-inner-spin-button, 
+        input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    </style>
+</head>
+<body class="p-4">
+    <div id="app" class="max-w-md mx-auto bg-white shadow-lg rounded-lg overflow-hidden">
+        
+        <!-- Header -->
+        <div class="bg-blue-600 p-6 text-white text-center">
+            <h1 class="text-2xl font-bold italic text-white">INVESTOR DASHBOARD</h1>
+            <p class="text-sm opacity-90">รอบที่ {{ settings.round }} | สถานะ: {{ settings.status }}</p>
+        </div>
+
+        <div class="p-6">
+            <!-- หน้า Login (กรอก ID เพื่อดึงยอดเงิน) -->
+            <div v-if="!isLoggedIn" class="space-y-4">
+                <div class="text-center py-4">
+                    <p class="text-gray-600 font-bold uppercase tracking-widest">Login ID</p>
+                </div>
+                <input v-model="playerId" type="text" placeholder="ระบุรหัส 3 หลัก เช่น 001" 
+                       class="w-full border-2 border-gray-300 rounded-xl p-4 text-center text-2xl font-bold focus:border-blue-500 outline-none">
+                <button @click="login" :disabled="isLoading"
+                        class="w-full bg-blue-600 text-white py-4 rounded-xl font-bold hover:bg-blue-700 transition shadow-lg disabled:opacity-50">
+                    {{ isLoading ? 'กำลังดึงข้อมูล...' : 'เข้าสู่ระบบ' }}
+                </button>
+            </div>
+
+            <!-- หน้าฟอร์มลงทุน (ดึงเงินต้นมาจาก Sheet อัตโนมัติ) -->
+            <div v-else class="space-y-4">
+                <div class="bg-slate-800 text-white p-5 rounded-2xl shadow-inner mb-6">
+                    <div class="flex justify-between items-center border-b border-slate-700 pb-2 mb-2">
+                        <span class="text-xs text-slate-400">ID นักลงทุน:</span>
+                        <span class="font-bold text-blue-400">{{ playerId }}</span>
+                    </div>
+                    <div class="flex justify-between items-center mb-1">
+                        <span class="text-sm">เงินทุนตั้งต้น:</span>
+                        <span class="font-bold font-mono">{{ formatMoney(initialBudget) }}</span>
+                    </div>
+                    <div class="flex justify-between items-center text-xl font-black">
+                        <span>เงินคงเหลือ:</span>
+                        <span :class="remainingBudget < 0 ? 'text-red-500' : 'text-green-400'" class="font-mono">
+                            {{ formatMoney(remainingBudget) }}
+                        </span>
+                    </div>
+                </div>
+
+                <div v-if="settings.status === 'Open'" class="space-y-3">
+                    <div v-for="(asset, i) in settings.assets" :key="i" class="flex items-center gap-3 bg-gray-50 p-2 rounded-lg border border-gray-100">
+                        <span class="text-xs font-bold text-gray-500 w-24 truncate">{{ asset }}</span>
+                        <input type="number" v-model.number="investments[i]" placeholder="0" 
+                               class="flex-grow border-gray-300 rounded-md shadow-sm p-2 border text-right font-mono focus:ring-1 focus:ring-blue-500">
+                    </div>
+
+                    <div class="pt-4 border-t flex items-center justify-between">
+                        <span class="text-gray-700 font-bold text-sm">ซื้อประกันภัย (10,000)</span>
+                        <input type="checkbox" v-model="insurance" class="w-6 h-6 text-blue-600 border-gray-300 rounded">
+                    </div>
+
+                    <div class="flex items-center justify-between border-t pt-4">
+                        <span class="text-sm font-bold text-gray-700">เลขนำโชค (1-10)</span>
+                        <input type="number" v-model.number="luckyNumber" min="1" max="10" 
+                               class="w-20 border-gray-300 rounded-md shadow-sm p-2 border text-center font-bold">
+                    </div>
+
+                    <button @click="submit" :disabled="isSubmitting || remainingBudget < 0" 
+                            class="w-full mt-4 py-4 rounded-xl font-bold text-white transition shadow-md"
+                            :class="remainingBudget < 0 ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'">
+                        {{ remainingBudget < 0 ? 'เงินทุนไม่เพียงพอ' : (isSubmitting ? 'กำลังส่งข้อมูล...' : 'ยืนยันการส่งข้อมูล') }}
+                    </button>
+                </div>
+
+                <div v-else class="text-center py-10 text-gray-400 border-2 border-dashed rounded-3xl">
+                    <p class="text-3xl mb-2">🔒</p>
+                    <p>ระบบปิดรับข้อมูลชั่วคราว<br>กรุณารอ GM เปิดระบบในรอบถัดไป</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const { createApp, ref, computed, onMounted } = Vue;
+        createApp({
+            setup() {
+                const scriptURL = 'https://script.google.com/macros/s/AKfycbxgyyuT1kSl-TCn0jwR2dTvLhjim5mPOycHrPsbYtVeGGFXzf98IWPLMTSwQaxsZ9f6OQ/exec';
+                
+                const playerId = ref('');
+                const isLoggedIn = ref(false);
+                const isSubmitting = ref(false);
+                const isLoading = ref(false);
+                const settings = ref({ status: '...', round: 1, assets: [] });
+                const investments = ref(new Array(15).fill(0));
+                const insurance = ref(false);
+                const luckyNumber = ref(1);
+                const initialBudget = ref(0);
+
+                const totalInvested = computed(() => {
+                    let total = investments.value.reduce((sum, val) => sum + (Number(val) || 0), 0);
+                    if (insurance.value) total += 10000;
+                    return total;
+                });
+
+                const remainingBudget = computed(() => initialBudget.value - totalInvested.value);
+                const formatMoney = (v) => new Intl.NumberFormat('th-TH').format(v);
+
+                const loadSettings = async () => {
+                    try {
+                        const res = await fetch(scriptURL);
+                        settings.value = await res.json();
+                    } catch (e) { console.error(e); }
+                };
+
+                const login = async () => {
+                    if (!playerId.value) return alert("กรุณาระบุ ID");
+                    isLoading.value = true;
+                    try {
+                        // ดึงยอดเงินต้นจาก Sheet (คอลัมน์ B) ตาม ID ที่กรอก
+                        const res = await fetch(`${scriptURL}?action=getBudget&id=${playerId.value}`);
+                        const data = await res.json();
+                        initialBudget.value = data.budget;
+                        isLoggedIn.value = true;
+                    } catch (e) {
+                        alert("ไม่สามารถดึงข้อมูล ID นี้ได้ กรุณาลองใหม่อีกครั้ง");
+                    }
+                    isLoading.value = false;
+                };
+
+                const submit = async () => {
+                    if (remainingBudget.value < 0) return alert("เงินทุนของคุณไม่พอสำหรับการลงทุนนี้");
+                    isSubmitting.value = true;
+                    try {
+                        const res = await fetch(scriptURL, {
+                            method: 'POST',
+                            body: JSON.stringify({
+                                playerId: playerId.value,
+                                round: settings.value.round,
+                                investments: investments.value,
+                                insurance: insurance.value,
+                                luckyNumber: luckyNumber.value
+                            })
+                        });
+                        const result = await res.json();
+                        if (result.result === 'success') {
+                            alert("ส่งข้อมูลสำเร็จ! ขอให้โชคดี");
+                            location.reload();
+                        } else { alert(result.message); }
+                    } catch (e) { alert("เกิดข้อผิดพลาดในการเชื่อมต่อ"); }
+                    isSubmitting.value = false;
+                };
+
+                onMounted(loadSettings);
+                return { 
+                    playerId, isLoggedIn, isSubmitting, isLoading, settings, 
+                    investments, insurance, luckyNumber, 
+                    initialBudget, remainingBudget, 
+                    formatMoney, login, submit 
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
